@@ -13,6 +13,7 @@ from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
 import pandas as pd
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,9 @@ def fetch_cn_snapshot(source: str = "efinance") -> pd.DataFrame:
 
     Raises RuntimeError if the source is unavailable.
     """
-    if source == "efinance":
+    if source == "sina":
+        return _fetch_sina()
+    elif source == "efinance":
         return _fetch_efinance()
     elif source == "akshare_em":
         return _fetch_akshare_em()
@@ -243,13 +246,61 @@ def _fetch_akshare_em() -> pd.DataFrame:
     return _normalize(df, source="akshare_em")
 
 
+def _fetch_sina() -> pd.DataFrame:
+    """Fetch A-share full-market snapshot directly from Sina Finance.
+
+    Sina's market-center endpoint is a lightweight direct HTTP source with PE,
+    PB, turnover and market-cap fields. It gives AlphaSift another non-wrapper,
+    non-Eastmoney-first snapshot option before falling back to Eastmoney-heavy
+    sources.
+    """
+    url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
+    page = 1
+    page_size = 80
+    all_items = []
+    while True:
+        resp = requests.get(
+            url,
+            params={
+                "page": page,
+                "num": page_size,
+                "sort": "symbol",
+                "asc": 1,
+                "node": "hs_a",
+                "symbol": "",
+                "_s_r_a": "page",
+            },
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://vip.stock.finance.sina.com.cn/mkt/",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        items = resp.json()
+        if not isinstance(items, list):
+            raise RuntimeError("sina snapshot returned malformed data")
+        if not items:
+            break
+        all_items.extend(items)
+        if len(items) < page_size:
+            break
+        page += 1
+    if not all_items:
+        raise RuntimeError("sina returned empty data")
+    df = pd.DataFrame(all_items)
+    for col in ("mktcap", "nmc"):
+        if col in df.columns:
+            # Sina exposes market caps in ten-thousand yuan; normalize to yuan.
+            df[col] = pd.to_numeric(df[col], errors="coerce") * 10000
+    return _normalize(df, source="sina")
+
+
 def _fetch_em_datacenter() -> pd.DataFrame:
     """Fetch via eastmoney datacenter xuangu API.
 
     This works even on weekends (returns last trading day data).
     """
-    import requests
-
     url = "https://data.eastmoney.com/dataapi/xuangu/list"
     all_items = []
     page = 1
@@ -438,6 +489,19 @@ def _normalize(df: pd.DataFrame, source: str) -> pd.DataFrame:
             "turnover_rate": ["换手率"],
             "industry": ["行业", "所属行业", "行业板块"],
             "concepts": ["概念", "概念题材", "题材"],
+        }
+    elif source == "sina":
+        standard_cols = {
+            "code": ["code"],
+            "name": ["name"],
+            "price": ["trade"],
+            "change_pct": ["changepercent"],
+            "amount": ["amount"],
+            "total_mv": ["mktcap"],
+            "circ_mv": ["nmc"],
+            "pe_ratio": ["per"],
+            "pb_ratio": ["pb"],
+            "turnover_rate": ["turnoverratio"],
         }
     elif source == "em_datacenter":
         standard_cols = {

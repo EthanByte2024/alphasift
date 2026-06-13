@@ -211,17 +211,18 @@ AlphaSift supports multiple A-share market snapshot sources and automatically fa
 Default without Tushare token:
 
 ```text
-efinance -> akshare_em -> em_datacenter
+sina -> efinance -> akshare_em -> em_datacenter
 ```
 
 Default with `TUSHARE_TOKEN` / `TUSHARE_API_TOKEN` and no manual priority override:
 
 ```text
-tushare -> efinance -> akshare_em -> em_datacenter
+tushare -> sina -> efinance -> akshare_em -> em_datacenter
 ```
 
 | Source | Backend | Notes |
 |---|---|---|
+| `sina` | Sina Finance Market Center | Direct HTTP full-market source with PE/PB/turnover/market-cap fields |
 | `efinance` | Eastmoney push2 | Fast during live sessions |
 | `akshare_em` | Eastmoney push endpoint via AkShare-style access | Backup live source |
 | `em_datacenter` | Eastmoney Data Center | Often available outside trading hours |

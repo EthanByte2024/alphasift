@@ -150,6 +150,7 @@ def test_config_prefers_tushare_when_token_is_configured(monkeypatch):
 
     assert config.snapshot_source_priority == [
         "tushare",
+        "sina",
         "efinance",
         "akshare_em",
         "em_datacenter",
@@ -164,6 +165,7 @@ def test_config_omits_tushare_from_default_priority_without_token(monkeypatch):
     config = Config.from_env()
 
     assert config.snapshot_source_priority == [
+        "sina",
         "efinance",
         "akshare_em",
         "em_datacenter",

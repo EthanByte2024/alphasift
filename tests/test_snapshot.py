@@ -6,6 +6,7 @@ import pytest
 
 from alphasift.snapshot import (
     _configure_tushare_client,
+    _fetch_sina,
     _normalize,
     _prepare_tushare_snapshot,
     fetch_cn_snapshot,
@@ -40,6 +41,79 @@ def test_normalize_efinance_maps_pb_ratio():
     assert normalized.loc[0, "pe_ratio"] == 5.2
     assert normalized.loc[0, "industry"] == "银行"
     assert normalized.loc[0, "concepts"] == "中特估,低估值"
+
+
+def test_normalize_sina_maps_valuation_and_turnover_fields():
+    df = pd.DataFrame([
+        {
+            "code": "000001",
+            "name": "平安银行",
+            "trade": "10.00",
+            "changepercent": "1.23",
+            "amount": "123456789",
+            "mktcap": "1000000000",
+            "nmc": "800000000",
+            "per": "5.2",
+            "pb": "0.8",
+            "turnoverratio": "2.5",
+        }
+    ])
+
+    normalized = _normalize(df, source="sina")
+
+    assert normalized.loc[0, "code"] == "000001"
+    assert normalized.loc[0, "price"] == 10.0
+    assert normalized.loc[0, "change_pct"] == 1.23
+    assert normalized.loc[0, "amount"] == pytest.approx(123456789)
+    assert normalized.loc[0, "total_mv"] == pytest.approx(1000000000)
+    assert normalized.loc[0, "circ_mv"] == pytest.approx(800000000)
+    assert normalized.loc[0, "pe_ratio"] == 5.2
+    assert normalized.loc[0, "pb_ratio"] == 0.8
+    assert normalized.loc[0, "turnover_rate"] == 2.5
+    assert normalized.attrs["snapshot_source"] == "sina"
+
+
+def test_fetch_sina_paginates_and_normalizes_market_cap_units(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def fake_get(url, **kwargs):
+        calls.append(kwargs)
+        page = kwargs["params"]["page"]
+        if page == 1:
+            return FakeResponse([
+                {
+                    "code": "000001",
+                    "name": "平安银行",
+                    "trade": "10.00",
+                    "changepercent": "1.23",
+                    "amount": "123456789",
+                    "mktcap": "100000",
+                    "nmc": "80000",
+                    "per": "5.2",
+                    "pb": "0.8",
+                    "turnoverratio": "2.5",
+                }
+            ])
+        return FakeResponse([])
+
+    monkeypatch.setattr("alphasift.snapshot.requests.get", fake_get)
+
+    normalized = _fetch_sina()
+
+    assert calls[0]["params"]["node"] == "hs_a"
+    assert calls[0]["headers"]["Referer"] == "https://vip.stock.finance.sina.com.cn/mkt/"
+    assert normalized.loc[0, "total_mv"] == pytest.approx(1000000000)
+    assert normalized.loc[0, "circ_mv"] == pytest.approx(800000000)
 
 
 def test_prepare_tushare_snapshot_maps_fields_and_units():
