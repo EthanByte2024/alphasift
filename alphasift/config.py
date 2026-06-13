@@ -214,7 +214,7 @@ class Config:
     daily_enrich_enabled: bool = False
     daily_enrich_max_candidates: int = 100
     daily_lookback_days: int = 120
-    daily_source: str = "akshare"
+    daily_source: str = "auto"
     daily_fetch_retries: int = 2
     daily_fetch_max_workers: int = 1
     daily_history_cache_dir: Path | None = None
@@ -345,7 +345,7 @@ class Config:
             daily_enrich_enabled=_parse_bool_env("DAILY_ENRICH_ENABLED", False),
             daily_enrich_max_candidates=max(1, int(os.getenv("DAILY_ENRICH_MAX_CANDIDATES", "100"))),
             daily_lookback_days=max(30, int(os.getenv("DAILY_LOOKBACK_DAYS", "120"))),
-            daily_source=os.getenv("DAILY_SOURCE", "akshare"),
+            daily_source=os.getenv("DAILY_SOURCE", "auto"),
             daily_fetch_retries=max(0, int(os.getenv("DAILY_FETCH_RETRIES", "2"))),
             daily_fetch_max_workers=max(1, int(os.getenv("DAILY_FETCH_MAX_WORKERS", "1"))),
             daily_history_cache_dir=daily_history_cache_dir,

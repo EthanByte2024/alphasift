@@ -64,6 +64,14 @@ def test_config_reads_daily_fetch_retries(monkeypatch):
     assert config.daily_fetch_retries == 4
 
 
+def test_config_defaults_daily_source_to_auto(monkeypatch):
+    monkeypatch.delenv("DAILY_SOURCE", raising=False)
+
+    config = Config.from_env()
+
+    assert config.daily_source == "auto"
+
+
 def test_config_reads_daily_fetch_max_workers(monkeypatch):
     monkeypatch.setenv("DAILY_FETCH_MAX_WORKERS", "3")
 

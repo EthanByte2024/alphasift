@@ -13,6 +13,7 @@ import threading
 import time
 
 import pandas as pd
+import requests
 
 _DAILY_FEATURE_DEFAULTS = {
     "daily_data_points": pd.NA,
@@ -119,22 +120,23 @@ def fetch_daily_history(
 ) -> pd.DataFrame:
     """Fetch daily history for one stock code.
 
-    ``source`` accepts ``akshare``, ``baostock``, ``tushare``, ``yfinance``
-    or ``auto``. ``auto`` prefers Tushare when a token is configured, then
-    falls back to akshare and baostock. Without a token it keeps the
-    free-source order. ``yfinance`` is explicit-only (never part of ``auto``)
-    and expects a US ticker rather than an A-share code.
+    ``source`` accepts ``tencent``, ``akshare``, ``baostock``, ``tushare``,
+    ``yfinance`` or ``auto``. ``auto`` prefers Tushare when a token is
+    configured, then Tencent's direct HTTP K-line endpoint before wrapper-based
+    free sources. Without a token it starts with Tencent. ``yfinance`` is
+    explicit-only (never part of ``auto``) and expects a US ticker rather than
+    an A-share code.
     """
     normalized_code = _normalize_daily_code(code)
     normalized_lookback_days = int(lookback_days)
     src = _normalize_daily_source(source)
     if src == "auto":
         sources: tuple[str, ...] = (
-            ("tushare", "akshare", "baostock")
+            ("tushare", "tencent", "akshare", "baostock")
             if _has_tushare_token()
-            else ("akshare", "baostock")
+            else ("tencent", "akshare", "baostock")
         )
-    elif src in ("akshare", "baostock", "tushare", "yfinance"):
+    elif src in ("akshare", "baostock", "tushare", "tencent", "yfinance"):
         sources = (src,)
     else:
         raise ValueError(f"Unsupported daily source: {source}")
@@ -160,7 +162,12 @@ def fetch_daily_history(
                 if current == "yfinance":
                     from alphasift.snapshot_us import fetch_daily_history_yfinance
                     return fetch_daily_history_yfinance(code, lookback_days=lookback_days)
-                if current == "akshare":
+                if current == "tencent":
+                    result = _fetch_daily_tencent(
+                        normalized_code,
+                        lookback_days=normalized_lookback_days,
+                    )
+                elif current == "akshare":
                     result = _fetch_daily_akshare(
                         normalized_code,
                         lookback_days=normalized_lookback_days,
@@ -304,6 +311,61 @@ def _fetch_daily_akshare(code: str, *, lookback_days: int) -> pd.DataFrame:
     if df is None or df.empty:
         raise RuntimeError(f"akshare daily history empty for {code}")
     return df.tail(max(lookback_days, 30)).copy()
+
+
+def _fetch_daily_tencent(code: str, *, lookback_days: int) -> pd.DataFrame:
+    """Fetch forward-adjusted daily history from Tencent's direct HTTP API.
+
+    The endpoint is the same low-friction source recommended by a-stock-data for
+    stable A-share market data access: no wrapper dependency, browser-like HTTP,
+    and much lower IP-ban risk than Eastmoney-heavy endpoints. Tencent returns
+    daily K-lines as rows shaped like ``date, open, close, high, low, volume``;
+    amount is not always present, so it is exposed as ``NA`` when absent to keep
+    the common daily schema stable.
+    """
+    symbol = _to_tencent_code(code)
+    count = max(int(lookback_days), 30)
+    response = requests.get(
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+        params={"param": f"{symbol},day,,,{count},qfq"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or payload.get("code") not in (0, "0", None):
+        message = payload.get("msg") if isinstance(payload, dict) else payload
+        raise RuntimeError(f"tencent daily API error for {code}: {message}")
+    data = payload.get("data") if isinstance(payload, dict) else None
+    stock_data = data.get(symbol) if isinstance(data, dict) else None
+    if not isinstance(stock_data, dict):
+        raise RuntimeError(f"tencent daily history missing payload for {code}")
+    rows = stock_data.get("qfqday") or stock_data.get("day") or []
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError(f"tencent daily history empty for {code}")
+
+    normalized_rows: list[dict[str, object]] = []
+    for row in rows:
+        if not isinstance(row, list) or len(row) < 6:
+            continue
+        normalized_rows.append({
+            "date": row[0],
+            "open": row[1],
+            "close": row[2],
+            "high": row[3],
+            "low": row[4],
+            "volume": row[5],
+            "amount": row[6] if len(row) > 6 else pd.NA,
+        })
+    if not normalized_rows:
+        raise RuntimeError(f"tencent daily history malformed for {code}")
+    df = pd.DataFrame(
+        normalized_rows,
+        columns=["date", "open", "close", "high", "low", "volume", "amount"],
+    )
+    for col in ("open", "close", "high", "low", "volume", "amount"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.tail(count).copy()
 
 
 def _fetch_daily_tushare(code: str, *, lookback_days: int) -> pd.DataFrame:
@@ -499,6 +561,15 @@ def _to_tushare_code(code: str) -> str:
     if raw.startswith(("6", "9", "5")):
         return f"{raw}.SH"
     return f"{raw}.SZ"
+
+
+def _to_tencent_code(code: str) -> str:
+    raw = str(code).strip().zfill(6)
+    if raw.startswith(("4", "8", "920")):
+        return f"bj{raw}"
+    if raw.startswith(("6", "9", "5")):
+        return f"sh{raw}"
+    return f"sz{raw}"
 
 
 def _is_baostock_network_outage(error_code: object, error_msg: object) -> bool:

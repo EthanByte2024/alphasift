@@ -171,7 +171,7 @@ AlphaSift is designed to reuse LiteLLM-style configuration used by `daily_stock_
 | `POST_ANALYZERS` | No | L3 analyzers; set `none` to disable | `scorecard` |
 | `DSA_API_URL` | For DSA analyzer | DSA service URL or full analysis endpoint | - |
 | `DAILY_ENRICH_ENABLED` | No | Enable candidate-level daily K-line enrichment | `false` |
-| `DAILY_SOURCE` | No | Daily K-line source: `akshare`, `baostock`, `tushare`, or `auto` | `akshare` |
+| `DAILY_SOURCE` | No | Daily K-line source: `auto`, `tencent`, `akshare`, `baostock`, or `tushare` | `auto` |
 | `ALPHASIFT_DATA_DIR` | No | Run records, caches, and evaluation results | `./data` |
 | `STRATEGIES_DIR` | No | Custom strategy directory | auto-detect |
 
@@ -226,6 +226,8 @@ tushare -> efinance -> akshare_em -> em_datacenter
 | `akshare_em` | Eastmoney push endpoint via AkShare-style access | Backup live source |
 | `em_datacenter` | Eastmoney Data Center | Often available outside trading hours |
 | `tushare` | Tushare Pro `daily` + `daily_basic` | Requires token; previous/nearest trading day data |
+
+Daily K-line enrichment defaults to `DAILY_SOURCE=auto`. The auto chain uses `tushare -> tencent -> akshare -> baostock` when a Tushare token is configured, otherwise `tencent -> akshare -> baostock`. Tencent is a direct HTTP K-line source with no wrapper dependency and is preferred over Eastmoney-heavy wrapper paths for candidate-level history enrichment.
 
 If a source is unavailable or lacks fields required by a strategy, AlphaSift skips it and tries the next source. If all live sources fail, the last-good snapshot fallback is explicitly marked as stale/fallback data; `SNAPSHOT_FALLBACK_MAX_AGE_HOURS` can reject overly old fallback cache to avoid repeating stale selections.
 

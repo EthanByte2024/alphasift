@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from alphasift.daily import compute_daily_features, enrich_daily_features, fetch_daily_history
-from alphasift.daily import _normalize_tushare_adj, _to_baostock_code, _to_tushare_code
+from alphasift.daily import _normalize_tushare_adj, _to_baostock_code, _to_tencent_code, _to_tushare_code
 
 
 def test_compute_daily_features_adds_trend_fields():
@@ -265,6 +265,80 @@ def test_fetch_daily_history_auto_prefers_tushare_when_token_exists(monkeypatch)
     assert result["close"].iloc[-1] == 10.4
 
 
+def test_fetch_daily_history_supports_tencent_direct_http(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "code": 0,
+                "data": {
+                    "sz000001": {
+                        "qfqday": [
+                            ["2026-04-28", "10.0", "10.4", "10.5", "9.9", "12345.0"],
+                            ["2026-04-29", "10.4", "10.5", "10.6", "10.3", "12300.0"],
+                        ]
+                    }
+                },
+            }
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr("alphasift.daily.requests.get", fake_get)
+
+    result = fetch_daily_history("1", source="tencent", retries=0)
+
+    assert captured["params"] == {"param": "sz000001,day,,,120,qfq"}
+    assert captured["headers"]["User-Agent"] == "Mozilla/5.0"
+    assert list(result.columns) == ["date", "open", "close", "high", "low", "volume", "amount"]
+    assert list(result["date"]) == ["2026-04-28", "2026-04-29"]
+    assert result["close"].iloc[-1] == 10.5
+    assert pd.isna(result["amount"].iloc[-1])
+
+
+def test_fetch_daily_history_auto_uses_tencent_before_wrapper_sources(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "code": 0,
+                "data": {
+                    "sh600519": {
+                        "qfqday": [["2026-04-29", "100", "101", "102", "99", "123"]]
+                    }
+                },
+            }
+
+    class FakeAkshare:
+        @staticmethod
+        def stock_zh_a_hist(**kwargs):
+            raise AssertionError("akshare should not be called when tencent succeeds")
+
+    def fake_get(*args, **kwargs):
+        calls.append(kwargs)
+        return FakeResponse()
+
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    monkeypatch.delenv("TUSHARE_API_TOKEN", raising=False)
+    monkeypatch.setattr("alphasift.daily.requests.get", fake_get)
+    monkeypatch.setitem(sys.modules, "akshare", FakeAkshare)
+
+    result = fetch_daily_history("600519", source="auto", retries=0)
+
+    assert calls[0]["params"] == {"param": "sh600519,day,,,120,qfq"}
+    assert result["close"].iloc[-1] == 101
+
+
 def test_enrich_daily_features_keeps_successful_rows_when_one_fetch_fails(monkeypatch):
     candidates = pd.DataFrame([
         {"code": "000001", "name": "平安银行"},
@@ -460,6 +534,16 @@ def test_to_tushare_code_handles_exchange_suffixes():
     assert _to_tushare_code("1") == "000001.SZ"
 
 
+def test_to_tencent_code_handles_exchange_prefixes():
+    assert _to_tencent_code("600519") == "sh600519"
+    assert _to_tencent_code("000001") == "sz000001"
+    assert _to_tencent_code("300750") == "sz300750"
+    assert _to_tencent_code("688981") == "sh688981"
+    assert _to_tencent_code("830799") == "bj830799"
+    assert _to_tencent_code("920593") == "bj920593"
+    assert _to_tencent_code("1") == "sz000001"
+
+
 def test_normalize_tushare_adj_accepts_qfq_and_none():
     assert _normalize_tushare_adj("qfq") == "qfq"
     assert _normalize_tushare_adj("hfq") == "hfq"
@@ -472,6 +556,9 @@ def test_fetch_daily_history_auto_falls_back_to_baostock(monkeypatch):
         @staticmethod
         def stock_zh_a_hist(**kwargs):
             raise ConnectionError("akshare temporarily unavailable")
+
+    def fake_tencent_get(*args, **kwargs):
+        raise ConnectionError("tencent temporarily unavailable")
 
     rows = [
         ["2026-04-28", "10.0", "10.5", "9.9", "10.4", "12345", "100000"],
@@ -505,6 +592,7 @@ def test_fetch_daily_history_auto_falls_back_to_baostock(monkeypatch):
 
     monkeypatch.setitem(__import__("sys").modules, "akshare", FakeAkshare)
     monkeypatch.setitem(__import__("sys").modules, "baostock", FakeBaostock)
+    monkeypatch.setattr("alphasift.daily.requests.get", fake_tencent_get)
     monkeypatch.setattr("alphasift.daily.time.sleep", lambda seconds: None)
 
     df = fetch_daily_history("600519", source="auto", retries=0)
