@@ -55,6 +55,15 @@ _DEFAULT_SCORING_PROFILE = {
     "stability_high_volume_ratio": 5.0,
     "stability_high_volume_ratio_penalty_slope": 4.0,
     "stability_invalid_pe_penalty": 18.0,
+    "stability_high_volatility_pct": 45.0,
+    "stability_high_volatility_penalty_slope": 0.45,
+    "stability_max_drawdown_floor_pct": -12.0,
+    "stability_drawdown_penalty_slope": 1.2,
+    "stability_high_atr_pct": 6.0,
+    "stability_high_atr_penalty_slope": 2.0,
+    "stability_low_daily_quality_score": 80.0,
+    "stability_low_daily_quality_penalty_slope": 0.35,
+    "stability_bad_daily_quality_flag_penalty": 8.0,
     "theme_heat_unknown_score": 50.0,
     "theme_heat_change_slope": 6.0,
     "theme_heat_rank_bonus": 10.0,
@@ -323,6 +332,35 @@ def _compute_stability_score(df: pd.DataFrame, profile: dict[str, float]) -> pd.
     if "signal_score" in df.columns:
         signal = pd.to_numeric(df["signal_score"], errors="coerce").fillna(50)
         score = score + (signal - 50) * 0.12
+
+    if "volatility_20d_pct" in df.columns:
+        volatility = pd.to_numeric(df["volatility_20d_pct"], errors="coerce")
+        score -= (
+            volatility - profile["stability_high_volatility_pct"]
+        ).clip(lower=0).fillna(0) * profile["stability_high_volatility_penalty_slope"]
+
+    if "max_drawdown_20d_pct" in df.columns:
+        drawdown = pd.to_numeric(df["max_drawdown_20d_pct"], errors="coerce")
+        score -= (
+            profile["stability_max_drawdown_floor_pct"] - drawdown
+        ).clip(lower=0).fillna(0) * profile["stability_drawdown_penalty_slope"]
+
+    if "atr_20_pct" in df.columns:
+        atr = pd.to_numeric(df["atr_20_pct"], errors="coerce")
+        score -= (
+            atr - profile["stability_high_atr_pct"]
+        ).clip(lower=0).fillna(0) * profile["stability_high_atr_penalty_slope"]
+
+    if "daily_quality_score" in df.columns:
+        quality = pd.to_numeric(df["daily_quality_score"], errors="coerce")
+        score -= (
+            profile["stability_low_daily_quality_score"] - quality
+        ).clip(lower=0).fillna(0) * profile["stability_low_daily_quality_penalty_slope"]
+
+    if "daily_quality_flags" in df.columns:
+        flags = df["daily_quality_flags"].fillna("").astype(str)
+        severe_flags = flags.str.contains("invalid_ohlc|non_positive_price|negative_volume|stale_cache")
+        score -= severe_flags.astype(float) * profile["stability_bad_daily_quality_flag_penalty"]
 
     return score.clip(0, 100)
 
