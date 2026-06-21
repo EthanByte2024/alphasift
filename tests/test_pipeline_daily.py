@@ -60,6 +60,10 @@ def test_pipeline_enriches_daily_features_for_daily_strategy(monkeypatch):
         enriched.attrs["daily_source_counts"] = {"tencent": 2}
         enriched.attrs["daily_quality_flag_counts"] = {"fallback_errors": 1}
         enriched.attrs["daily_source_order_notes"] = ["daily source order adjusted by health: tencent,sina"]
+        enriched.attrs["daily_source_health"] = {
+            "sina": {"failures": 0.0, "total_failures": 1.0, "last_rows": 30.0, "disabled": False},
+            "tencent": {"failures": 2.0, "total_failures": 2.0, "last_rows": 0.0, "disabled": True},
+        }
         return enriched
 
     monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources, **kwargs: df)
@@ -90,6 +94,9 @@ def test_pipeline_enriches_daily_features_for_daily_strategy(monkeypatch):
     assert "Daily K-line sources: tencent=2" in result.degradation
     assert "Daily K-line quality flags: fallback_errors=1" in result.degradation
     assert "Daily K-line source ordering: daily source order adjusted by health: tencent,sina" in result.degradation
+    assert any("Daily K-line source health:" in item for item in result.degradation)
+    assert any("tencent disabled,failures=2" in item for item in result.degradation)
+    assert any("sina total_failures=1,last_rows=30" in item for item in result.degradation)
     assert any("Daily hard-filter rejections:" in item for item in result.degradation)
     assert any("require_ma_bullish removed 1" in item for item in result.degradation)
 
