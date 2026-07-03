@@ -18,7 +18,7 @@ AlphaSift is an agent-friendly stock discovery and ranking engine. It scans a br
 - **L3 pluggable post-analysis**: local scorecard by default, with optional DSA or external HTTP analyzers.
 - **Hotspot discovery**: topic/sector heat ranking, hotspot detail resolution, leader stock fallbacks, cache quality metadata, and history sidecars.
 - **Daily feature enrichment**: optional candidate-level daily K-line features such as moving averages, MACD/RSI, breakout strength, volume ratio, pullback distance, and platform duration.
-- **Evaluation loop**: save runs, evaluate later using newer snapshots, deduct transaction cost, tag follow-through / failed-breakout outcomes, and optionally fetch price paths for max drawdown / max favorable excursion.
+- **Evaluation loop**: save runs, evaluate later using newer snapshots, deduct transaction cost, tag follow-through / failed-breakout outcomes, review failure samples, and optionally fetch price paths for max drawdown / max favorable excursion.
 - **Agent-native interface**: `SKILL.md` describes capabilities and callable interfaces for AI agents.
 
 ## Quick start
@@ -35,6 +35,12 @@ cp .env.example .env
 
 # List built-in strategies
 alphasift strategies
+
+# UI/agent overview: strategy groups, source health, recent runs
+alphasift overview --explain
+
+# Local read-only JSON API for dashboards/agents
+alphasift serve --host 127.0.0.1 --port 8765
 
 # Run the no-key demo
 alphasift quickstart
@@ -65,6 +71,11 @@ alphasift screen dual_low --no-post-analysis
 
 # Audit project and strategy configuration
 alphasift audit
+
+# Save a run and generate a Markdown review report
+alphasift screen dual_low --no-llm --save-run
+alphasift runs --json
+alphasift report <run_id> --output data/reports/dual_low.md
 ```
 
 Example output shape:
@@ -252,15 +263,17 @@ If a source is unavailable, times out, or lacks fields required by a strategy, A
 | Strategy | Type | Description |
 |---|---|---|
 | `dual_low` | Value | Low PE + low PB defensive value screen |
+| `blue_chip_income` | Income | High-liquidity blue-chip and dividend-quality defensive screen |
 | `volume_breakout` | Trend | Volume expansion and resistance breakout |
 | `quality_value` | Value | Reasonable valuation, liquidity, and controlled volatility |
+| `low_volatility_quality` | Quality | Defensive quality screen using daily volatility, drawdown, ATR, and data-quality controls |
 | `capital_heat` | Momentum | Active capital flow without extreme overheating |
 | `oversold_reversal` | Reversal | Repair candidates with controlled drawdown and still-valid liquidity |
 | `balanced_alpha` | Framework | General multi-factor discovery strategy |
 | `momentum_quality` | Framework | Trend confirmation plus quality filters |
 | `shrink_pullback` | Trend | Pullback into support during a broader uptrend; uses daily enrichment |
 
-Add custom YAML strategies under `strategies/`. See [docs/strategy-guide.md](docs/strategy-guide.md).
+Use `alphasift overview --json/--explain` for one UI/agent payload that combines strategy groups, strategy facets, strategy cards, optional strategy recommendations, data-source `health_summary`, strategy coverage, data-source history, saved-evaluation performance, recent runs, and next actions. Use `alphasift serve` for a local read-only JSON API with `/health`, `/result-schema`, `/overview`, `/strategies`, `/strategy?name=<strategy_name>`, `/strategy-compare?base=<base>&target=<target>`, `/strategy-facets`, `/strategy-cards`, `/strategy-readiness`, `/strategy-run-summary`, `/data-source-history`, `/strategy-performance`, `/strategy-templates`, `/strategy-template?name=<template_name>`, `/runs`, `/report?run=<run_id>`, and `/doctor/data-sources` endpoints. Use `alphasift strategies --json` or `alphasift strategies --explain` to inspect strategy style, data requirements, active filters, factor weights, and profile overrides. Add matching flags such as `--risk-profile defensive --holding-period swing --strict --json` when a UI or agent needs ranked strategy recommendations, or `--compare dual_low low_volatility_quality --json` / `/strategy-compare` when reviewing strategy parameter drift. Use `/strategy-facets` when a UI needs filter values, counts, and backing strategy names for category, tag, style, data-requirement, and required-field controls. Use `/strategy-cards` when a UI needs one card per strategy with catalog metadata, readiness state, saved-run history, saved-evaluation performance, top factors, next actions, and lanes for needs-history, needs-evaluation, performance leaders, and attention. Use `/strategy-readiness` when a UI needs ready/attention/unchecked counts and missing-field impacts before live screening. Use `/strategy-run-summary` when a UI needs saved-run history by strategy without evaluating against live quotes, `/data-source-history` when it needs recent snapshot-source error/degradation/fallback rates, samples, stability status, and next actions from saved-run metadata, and `/strategy-performance` when it needs saved-evaluation return/win-rate leaderboards without re-running live evaluation. Use `alphasift strategies --templates --explain` and `alphasift strategies --template <name>` to start from reusable strategy authoring templates. Use `alphasift doctor data-sources --all-strategies --explain` to inspect the cross-strategy data-source field coverage matrix, source `health_summary`, and live snapshot `quality_summary` before relying on live screening. Add custom YAML strategies under `strategies/`. See [docs/strategy-guide.md](docs/strategy-guide.md).
 
 ## Project layout
 
@@ -294,6 +307,7 @@ alphasift/
     ├── post_analysis.py     # L3 post-analysis plugins
     ├── dsa.py               # Optional DSA integration
     ├── store.py             # Run persistence
+    ├── overview.py          # UI/agent overview payload
     ├── evaluate.py          # T+N evaluation
     ├── pipeline.py          # Main orchestration
     └── strategy.py          # Strategy YAML loader

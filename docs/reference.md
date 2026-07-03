@@ -66,6 +66,7 @@ alphasift/
 - [`akfamily/akshare`](https://github.com/akfamily/akshare)：覆盖面广、调用简单，但官方说明强调数据风险和接口可能变动。AlphaSift 保留 AkShare 作为备源或可选 provider，不再让它成为唯一关键路径。
 - [`microsoft/qlib`](https://github.com/microsoft/qlib)：强调本地数据准备、数据健康检查和可重复研究 workflow。AlphaSift 对应补上 `doctor data-sources`、source-health JSON、daily quality flags、saved-run/evaluate 闭环。
 - [`ricequant/rqalpha`](https://github.com/ricequant/rqalpha) 与 [`zvtvz/zvt`](https://github.com/zvtvz/zvt)：都把数据层/策略层解耦，支持扩展 provider 或本地持久化后再选股。AlphaSift 保持策略 YAML、数据源 fallback、last-good cache 与上层 DSA/API 解耦，而不是把某个免费源写死成强依赖。
+- [`freqtrade/freqtrade`](https://github.com/freqtrade/freqtrade)：把 strategy 列表、backtesting、参数优化和 WebUI/状态展示做成核心使用路径。AlphaSift 不做交易 bot，但策略目录需要提供机器可读能力描述，方便 CLI、Web UI、DSA 或通知助手按数据依赖和风格选择策略。
 
 ## 已知限制
 
@@ -80,11 +81,11 @@ alphasift/
 
 对照同类智能投研项目，AlphaSift 后续优先补这些能力：
 
-- **数据可靠性**：已补 `tushare` 兜底、wrapper 调用超时、source-health 熔断与 last-good/stale fallback；下一步做多源字段对账、数据新鲜度标记、异常值报告和缓存命中可视化。
-- **事件归因闭环**：把新闻、公告、资金流的事件标签纳入 `evaluate-batch` 统计，区分哪些事件真的改善后验表现。
+- **数据可靠性**：已补 `tushare` 兜底、wrapper 调用超时、source-health 熔断、`health_summary` 聚合、`freshness_summary` 新鲜度/缓存状态摘要、`--compare-snapshot-sources` 多源字段/代码交集对账、snapshot `quality_summary` 字段异常报告、last-good/stale fallback，以及基于 saved-run 元数据的 `/data-source-history` 错误率/降级率/fallback 率聚合；下一步做缓存命中趋势可视化。
+- **事件归因闭环**：已把 LLM tags/catalysts/risks、后置分析标签和合并事件信号纳入 `evaluate-batch/evaluate-strategies` 的维度统计、`failure_review` 与 `event_signal_review`，用于区分哪些事件信号在成功/失败样本中反复出现，并给出 prefer/avoid/watch 动作建议。
 - **回测边界**：在现有 T+N 评估上继续补持仓约束、调仓周期、逐日权益曲线和复权处理；完整量化研究可对接 Qlib 或 Backtrader。
-- **Agent 产物**：把一次选股运行输出为稳定的 Markdown/JSON 报告包，便于被通知助手、Web UI 或 MCP/HTTP 服务消费。
-- **策略研发**：增加策略 profile 模板、参数版本对比和失败样本复盘，让 YAML 策略迭代更可控。
+- **Agent 产物**：已补 `alphasift overview --json/--explain`、`alphasift report <run_id>` 和 `alphasift serve` 只读本地 JSON API，可把策略分组、策略筛选 facets、策略卡片、策略准备度、saved-run 历史摘要、数据源历史、数据源健康、最近运行、next actions 和单次选股运行输出为稳定 payload，便于被通知助手、Web UI 或 MCP/HTTP 服务消费；下一步补报告模板和更完整的 UI 审批流。
+- **策略研发**：已补 `alphasift strategies --json/--explain`、`strategies --compare`、`strategies --templates/--template`、`evaluate-batch/evaluate-strategies` 的 `failure_review`/`event_signal_review`、策略风格属性、策略数据依赖、必需 snapshot/daily 字段、单策略/全策略 `doctor data-sources --strategy/--all-strategies` 预检、`strategy_readiness_summary`、活跃过滤/因子权重/profile 元数据，以及 `low_volatility_quality` 防守型质量策略；事件胜率建议已能输出策略级 `screening.event_profile` YAML patch 建议。下一步可把这些建议接入 UI 审批或生成候选策略变体。
 
 ## 实测记录
 
